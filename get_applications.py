@@ -1,6 +1,23 @@
 import requests
 from lxml import etree
+import re
 from settings import *
+
+SLUG_REGEX = re.compile('^[A-Za-z_]\w{0,64}$')
+
+try:
+    import unidecode
+    def slugify(verbose_name):
+        slug = re.sub(r'\W+','_',unidecode.unidecode(verbose_name).lower())
+        if not SLUG_REGEX.match(slug):
+            slug = '_'+slug
+        return slug 
+except:
+    def slugify(verbose_name):
+        slug = re.sub(r'\W+','_',verbose_name.lower())
+        if not SLUG_REGEX.match(slug):
+            slug = '_'+slug
+        return slug 
 
 class Connection(object):
 	def __init__(self, database, username, password):
@@ -30,6 +47,18 @@ class Connection(object):
 		else:
 			return None
 
+	def get_application(self, aid):
+		return self.get_json('Applicant/%s' % aid)
+
+	def get_list_applications(self):
+		application_list = self.get_json('Data')
+		return [item['aid'] for item in application_list]
+
 if __name__ == '__main__':
 	connection = Connection(DATABASE, USERNAME, PASSWORD)
-	print(connection.get_json('Data'))	
+	applications = connection.get_list_applications()
+	for aid in applications:
+		application = connection.get_application(aid)
+		print(slugify('%s %s %s' 
+			% (application['lname'], application['mname'], application['fname'])
+			))
