@@ -1,6 +1,8 @@
 import requests
 from lxml import etree
 import re
+import os
+from base64 import b64decode
 from settings import *
 
 SLUG_REGEX = re.compile('^[A-Za-z_]\w{0,64}$')
@@ -17,7 +19,11 @@ except:
         slug = re.sub(r'\W+','_',verbose_name.lower())
         if not SLUG_REGEX.match(slug):
             slug = '_'+slug
-        return slug 
+        return slug
+
+def blob_to_file(blob_base64, file_name):
+	with open(file_name, 'bw') as f:
+		f.write(b64decode(blob_base64))
 
 class Connection(object):
 	def __init__(self, database, username, password):
@@ -54,11 +60,40 @@ class Connection(object):
 		application_list = self.get_json('Data')
 		return [item['aid'] for item in application_list]
 
+	def save_blob(self, blob_id, path):
+		response = self.get_xml('Blob/%s' % blob_id)
+		if response is not None:
+			blob_to_file(response.text, path)
+
+	def save_response(self, path, response):
+		FORMATS = dict(cv='pdf', jmpaper='pdf', other='pdf', photo='jpeg')
+
+		if 'type' in response and response['type'] in FORMATS:
+			# simply skip over other response types
+			file_name = '%s/%s.%s' % (path, response['type'], FORMATS[response['type']])
+			blob_id = response['varstring']
+			self.save_blob(blob_id, file_name)
+
+	def save_reference(self, path, reference):
+		file_name = '%s/reference_%s.pdf' % (path, slugify('%s %s' 
+			% (reference['fname'], reference['lname'])))
+		blob_id = reference['letter']
+		self.save_blob(blob_id, file_name)
+
 if __name__ == '__main__':
 	connection = Connection(DATABASE, USERNAME, PASSWORD)
 	applications = connection.get_list_applications()
+
 	for aid in applications:
 		application = connection.get_application(aid)
-		print(slugify('%s %s %s' 
+		path = slugify('%s %s %s' 
 			% (application['lname'], application['mname'], application['fname'])
-			))
+			) 
+		os.makedirs('./%s' % path)
+		print(path)
+		for posid, position in application['application'].items():
+			for response in position['responses']:
+				connection.save_response(path, response)
+			for reference in position['references']:
+				connection.save_reference(path, reference)
+
